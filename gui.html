@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batalla Naval</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for better visual appeal */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Dark background */
+            color: #e2e8f0; /* Light text */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+
+        .game-container {
+            background-color: #2d3748; /* Slightly lighter dark background for container */
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.3);
+            padding: 2rem;
+            text-align: center;
+            max-width: 90%;
+            width: 500px; /* Max width for game container */
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .board-grid {
+            display: grid;
+            gap: 0.25rem; /* Small gap between cells */
+            border-radius: 0.5rem;
+            overflow: hidden; /* Ensures rounded corners apply to the grid */
+            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.5); /* Inner shadow for depth */
+        }
+
+        .board-cell {
+            width: 100%; /* Ensure cells take full width of their grid area */
+            padding-top: 100%; /* Makes cells square */
+            position: relative;
+            background-color: #4a5568; /* Water color */
+            border-radius: 0.375rem; /* Rounded corners for cells */
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.25rem;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            user-select: none; /* Prevent text selection */
+        }
+
+        .board-cell:hover:not(.hit):not(.miss):not(.sunk) {
+            background-color: #636b77; /* Hover effect for water */
+            transform: scale(1.02);
+        }
+
+        .board-cell.hit {
+            background-color: #e53e3e; /* Red for hit */
+            color: #fff;
+            transform: scale(1.05); /* Pop out effect */
+        }
+
+        .board-cell.sunk {
+            background-color: #8b0000; /* Darker red for sunk */
+            color: #fff;
+            transform: scale(1.05);
+        }
+
+        .board-cell.miss {
+            background-color: #4299e1; /* Blue for miss */
+            color: #fff;
+        }
+
+        .board-cell.disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+
+        .message-box {
+            background-color: #4a5568;
+            padding: 1rem;
+            border-radius: 0.75rem;
+            margin-top: 1rem;
+            font-size: 1.1rem;
+            min-height: 3rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .stats-container {
+            display: flex;
+            justify-content: space-around;
+            width: 100%;
+            margin-top: 1rem;
+        }
+
+        .stat-item {
+            background-color: #4a5568;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            font-size: 1rem;
+            font-weight: bold;
+        }
+
+        .reset-button {
+            background-color: #48bb78; /* Green for reset */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.75rem;
+            font-size: 1.1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s ease, transform 0.1s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-top: 1.5rem;
+        }
+
+        .reset-button:hover {
+            background-color: #38a169;
+            transform: translateY(-2px);
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 640px) {
+            .game-container {
+                padding: 1rem;
+                gap: 1rem;
+            }
+            .board-cell {
+                font-size: 1rem;
+            }
+            .message-box, .stat-item, .reset-button {
+                font-size: 0.9rem;
+                padding: 0.5rem 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1 class="text-3xl font-bold mb-4">Batalla Naval</h1>
+        <div id="board-container" class="board-grid">
+            </div>
+        <div id="message-box" class="message-box">¡Bienvenido a Batalla Naval!</div>
+        <div class="stats-container">
+            <div id="attempts-display" class="stat-item">Intentos: 0</div>
+            <div id="ships-remaining-display" class="stat-item">Barcos restantes: 0</div>
+        </div>
+        <button id="reset-button" class="reset-button">Reiniciar Juego</button>
+    </div>
+
+    <script>
+        // --- Board Class (JavaScript adaptation) ---
+        class Board {
+            constructor(size) {
+                this.size = size;
+                this.grid = Array(size).fill(null).map(() => Array(size).fill('~'));
+                // Each element in ships will be a dictionary:
+                // {'original_coords': Set of all (row, col) for the ship,
+                //  'remaining_coords': Set of (row, col) not yet hit}
+                this.ships = [];
+                this.ship_sizes_placed = []; // To remember the size of each ship placed
+            }
+
+            placeShip(shipSize) {
+                const orientation = Math.random() < 0.5 ? 'horizontal' : 'vertical';
+                for (let attempts = 0; attempts < 100; attempts++) {
+                    let row, col;
+                    let locations = new Set();
+
+                    if (orientation === 'horizontal') {
+                        row = Math.floor(Math.random() * this.size);
+                        col = Math.floor(Math.random() * (this.size - shipSize + 1));
+                        for (let i = 0; i < shipSize; i++) {
+                            locations.add(`${row},${col + i}`);
+                        }
+                    } else { // vertical
+                        row = Math.floor(Math.random() * (this.size - shipSize + 1));
+                        col = Math.floor(Math.random() * this.size);
+                        for (let i = 0; i < shipSize; i++) {
+                            locations.add(`${row + i},${col}`);
+                        }
+                    }
+
+                    // Check for overlap with existing ships
+                    let overlap = false;
+                    for (const existingShipData of this.ships) {
+                        for (const loc of locations) {
+                            if (existingShipData.original_coords.has(loc)) {
+                                overlap = true;
+                                break;
+                            }
+                        }
+                        if (overlap) break;
+                    }
+
+                    if (!overlap) {
+                        this.ships.push({
+                            original_coords: new Set(locations), // Store a copy
+                            remaining_coords: new Set(locations) // Store a copy
+                        });
+                        this.ship_sizes_placed.push(shipSize);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            placeAllShips(shipSizes) {
+                for (const size of shipSizes) {
+                    if (!this.placeShip(size)) {
+                        console.error(`No se pudo colocar un barco de tamaño ${size}`);
+                        // In a GUI, you might want to restart or show an error message
+                        throw new Error(`No se pudo colocar un barco de tamaño ${size}`);
+                    }
+                }
+            }
+
+            update(row, col, result) {
+                this.grid[row][col] = result;
+            }
+
+            checkHit(row, col) {
+                const coord = `${row},${col}`;
+                for (let i = 0; i < this.ships.length; i++) {
+                    const shipData = this.ships[i];
+                    if (shipData.remaining_coords.has(coord)) {
+                        shipData.remaining_coords.delete(coord);
+                        return i; // Return the index of the ship that was hit
+                    }
+                }
+                return null; // No ship at these coordinates
+            }
+
+            allShipsSunk() {
+                return this.ships.every(shipData => shipData.remaining_coords.size === 0);
+            }
+
+            getShipsRemainingCount() {
+                return this.ships.filter(shipData => shipData.remaining_coords.size > 0).length;
+            }
+        }
+
+        // --- Game Class (JavaScript adaptation) ---
+        class Game {
+            constructor(boardSize = 5) {
+                this.board = new Board(boardSize);
+                this.shipSizes = this._generateShipSizes(6, 9, [1, 2, 3]);
+                this.board.placeAllShips(this.shipSizes);
+                this.attempts = 0;
+            }
+
+            _generateShipSizes(minTotalSize, maxTotalSize, possibleSizes) {
+                let shipSizes = [];
+                let currentTotalSize = 0;
+
+                // Ensure minimum total size is met
+                while (currentTotalSize < minTotalSize) {
+                    const possibleAdditions = possibleSizes.filter(size => currentTotalSize + size <= maxTotalSize);
+                    if (possibleAdditions.length === 0) break;
+                    const shipSize = possibleAdditions[Math.floor(Math.random() * possibleAdditions.length)];
+                    shipSizes.push(shipSize);
+                    currentTotalSize += shipSize;
+                }
+
+                // Add more ships randomly up to maxTotalSize
+                while (currentTotalSize < maxTotalSize && Math.random() < 0.7) {
+                    const possibleAdditions = possibleSizes.filter(size => currentTotalSize + size <= maxTotalSize);
+                    if (possibleAdditions.length === 0) break;
+                    const shipSize = possibleAdditions[Math.floor(Math.random() * possibleAdditions.length)];
+                    shipSizes.push(shipSize);
+                    currentTotalSize += shipSize;
+
+                    if (shipSizes.length > 7) break; // Limit number of ships
+                }
+
+                // Adjust total size if it's out of bounds after random additions
+                let totalSize = shipSizes.reduce((sum, size) => sum + size, 0);
+                while (totalSize < minTotalSize) {
+                    const possibleAdditions = possibleSizes.filter(size => totalSize + size <= maxTotalSize);
+                    if (possibleAdditions.length === 0) break;
+                    const addSize = possibleAdditions[Math.floor(Math.random() * possibleAdditions.length)];
+                    shipSizes.push(addSize);
+                    totalSize += addSize;
+                }
+
+                while (totalSize > maxTotalSize && shipSizes.length > 0) {
+                    // Remove largest ship if over max_total_size
+                    const largestShipSize = Math.max(...shipSizes);
+                    const indexToRemove = shipSizes.indexOf(largestShipSize);
+                    shipSizes.splice(indexToRemove, 1);
+                    totalSize -= largestShipSize;
+
+                    // If removing made it too small, try to add a small one back if possible
+                    if (totalSize < minTotalSize) {
+                        const possibleAdditions = possibleSizes.filter(s => totalSize + s <= maxTotalSize);
+                        if (possibleAdditions.length > 0) {
+                            const addSize = possibleAdditions[Math.floor(Math.random() * possibleAdditions.length)];
+                            shipSizes.push(addSize);
+                            totalSize += addSize;
+                        }
+                    }
+                }
+
+                const finalTotalSize = shipSizes.reduce((sum, size) => sum + size, 0);
+                if (!(minTotalSize <= finalTotalSize && finalTotalSize <= maxTotalSize)) {
+                    // If after adjustments, it's still out of bounds, retry generation
+                    return this._generateShipSizes(minTotalSize, maxTotalSize, possibleSizes);
+                }
+
+                return shipSizes;
+            }
+
+            processGuess(row, col) {
+                if (!(row >= 0 && row < this.board.size && col >= 0 && col < this.board.size)) {
+                    return "¡Coordenadas fuera del tablero!";
+                }
+
+                // Check if the spot has already been shot at
+                const currentCellStatus = this.board.grid[row][col];
+                if (currentCellStatus === 'X' || currentCellStatus === '*' || currentCellStatus === 'M') {
+                    return "¡Ya disparaste a esta coordenada!";
+                }
+
+                this.attempts++;
+                const hitShipIndex = this.board.checkHit(row, col);
+
+                if (hitShipIndex !== null) {
+                    // It's a hit!
+                    const hitShipData = this.board.ships[hitShipIndex];
+                    if (hitShipData.remaining_coords.size === 0) { // Check if the ship is now sunk
+                        // If the ship is sunk, mark all its original coordinates with '*'
+                        for (const coordStr of hitShipData.original_coords) {
+                            const [r, c] = coordStr.split(',').map(Number);
+                            this.board.update(r, c, '*');
+                        }
+                        return "¡Hundiste un barco!";
+                    } else {
+                        // If it's a hit but not sunk, mark only the hit coordinate with 'X'
+                        this.board.update(row, col, 'X');
+                        return "¡Impacto!";
+                    }
+                } else {
+                    // It's a miss, mark with 'M'
+                    this.board.update(row, col, 'M');
+                    return "¡Agua!";
+                }
+            }
+
+            hasWon() {
+                return this.board.allShipsSunk();
+            }
+
+            getAttempts() {
+                return this.attempts;
+            }
+        }
+
+        // --- GUI Logic ---
+        const BOARD_SIZE = 5;
+        let game;
+        const boardContainer = document.getElementById('board-container');
+        const messageBox = document.getElementById('message-box');
+        const attemptsDisplay = document.getElementById('attempts-display');
+        const shipsRemainingDisplay = document.getElementById('ships-remaining-display');
+        const resetButton = document.getElementById('reset-button');
+
+        function initializeGame() {
+            game = new Game(BOARD_SIZE);
+            renderBoard();
+            updateStats();
+            messageBox.textContent = "¡Bienvenido a Batalla Naval!";
+            boardContainer.classList.remove('disabled-board'); // Enable board for new game
+        }
+
+        function renderBoard() {
+            boardContainer.innerHTML = ''; // Clear existing board
+            boardContainer.style.gridTemplateColumns = `repeat(${BOARD_SIZE}, 1fr)`;
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+                for (let c = 0; c < BOARD_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('board-cell', 'relative', 'rounded');
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.textContent = ''; // Initial empty state
+
+                    // Set initial background based on game state (hidden ships are water)
+                    const cellStatus = game.board.grid[r][c];
+                    if (cellStatus === 'X') {
+                        cell.classList.add('hit');
+                        cell.textContent = 'X';
+                    } else if (cellStatus === '*') {
+                        cell.classList.add('sunk');
+                        cell.textContent = '*';
+                    } else if (cellStatus === 'M') {
+                        cell.classList.add('miss');
+                        cell.textContent = 'M';
+                    } else {
+                        cell.classList.add('water'); // Default water style
+                    }
+
+                    cell.addEventListener('click', handleCellClick);
+                    boardContainer.appendChild(cell);
+                }
+            }
+        }
+
+        function handleCellClick(event) {
+            const row = parseInt(event.target.dataset.row);
+            const col = parseInt(event.target.dataset.col);
+
+            const result = game.processGuess(row, col);
+            messageBox.textContent = result;
+            updateBoardDisplay(row, col); // Update the clicked cell's appearance
+            updateStats();
+
+            if (game.hasWon()) {
+                messageBox.textContent = `¡Felicidades! ¡Has hundido todos los barcos en ${game.getAttempts()} intentos!`;
+                disableBoard();
+            } else if (result === "¡Ya disparaste a esta coordenada!") {
+                // No change in attempts or board, just a message
+            }
+        }
+
+        function updateBoardDisplay(row, col) {
+            const cellElement = boardContainer.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+            if (!cellElement) return;
+
+            const currentStatus = game.board.grid[row][col];
+            cellElement.classList.remove('water', 'hit', 'sunk', 'miss'); // Remove previous states
+
+            if (currentStatus === 'X') {
+                cellElement.classList.add('hit');
+                cellElement.textContent = 'X';
+            } else if (currentStatus === '*') {
+                // If a ship is sunk, all its original coordinates need to be updated
+                const sunkShipData = game.board.ships.find(ship => ship.original_coords.has(`${row},${col}`) && ship.remaining_coords.size === 0);
+                if (sunkShipData) {
+                    for (const coordStr of sunkShipData.original_coords) {
+                        const [r, c] = coordStr.split(',').map(Number);
+                        const sunkCell = boardContainer.querySelector(`[data-row="${r}"][data-col="${c}"]`);
+                        if (sunkCell) {
+                            sunkCell.classList.remove('water', 'hit', 'miss');
+                            sunkCell.classList.add('sunk');
+                            sunkCell.textContent = '*';
+                        }
+                    }
+                }
+            } else if (currentStatus === 'M') {
+                cellElement.classList.add('miss');
+                cellElement.textContent = 'M';
+            }
+            // If the cell was already hit/sunk and clicked again, no visual change needed
+        }
+
+        function updateStats() {
+            attemptsDisplay.textContent = `Intentos: ${game.getAttempts()}`;
+            shipsRemainingDisplay.textContent = `Barcos restantes: ${game.board.getShipsRemainingCount()}`;
+        }
+
+        function disableBoard() {
+            const cells = boardContainer.querySelectorAll('.board-cell');
+            cells.forEach(cell => {
+                cell.removeEventListener('click', handleCellClick);
+                cell.classList.add('disabled');
+            });
+        }
+
+        // Event listener for reset button
+        resetButton.addEventListener('click', initializeGame);
+
+        // Initialize the game when the page loads
+        document.addEventListener('DOMContentLoaded', initializeGame);
+    </script>
+</body>
+</html>
